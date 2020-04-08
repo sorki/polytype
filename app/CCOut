@@ -1,0 +1,407 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE FlexibleContexts #-}
+module Multitype where
+
+import qualified Data.ByteString.Char8 as C
+import System.IO
+import System.IO.STM
+import System.Hardware.Serialport
+import System.Hardware.Serialport.STM
+
+import Control.Applicative hiding (empty)
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.Class (lift)
+import Control.Exception
+import Control.Concurrent
+import qualified Control.Concurrent.Async as A
+--import qualified Control.Concurrent.Async.Lifted as LA
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TMQueue
+
+--import Control.Monad.Free    (liftF, iterM)
+import Control.Monad.Trans.Free   -- (liftF, iterM)
+import Control.Monad.Loops (unfoldM)
+import System.Exit
+import System.Process hiding (system)--(createProcess, proc)
+
+import Network.ZRE
+import qualified Control.Concurrent.Async.Lifted as LA
+
+import Text.Printf
+import Multitype.Types
+
+import qualified Data.Text as T
+import Data.Functor.Identity
+import System.Console.Concurrent
+import System.Console.Terminal
+import Control.Monad.Terminal
+
+
+runTestPure :: String -> TestT (StateT String Identity) Result -> Result
+runTestPure chars t = runIdentity
+    $ fmap fst
+    $ runStateT (iterT run t) chars
+  where
+    run Halt = return $ Left Halted
+    run (ReadChar Target{..} eof f) = do
+      cs <- get
+      put (drop 1 cs)
+      f $ cs !! 0
+    run (WriteChar Target{..} c f) = f
+    run (Trace m f) = f
+    run (System e a f) = f Target { name = "pure", putC = \c -> liftIO $ return (), getC = return Nothing }
+    run (TestFail e) = return $ Left $ Failed e
+    run (TestSuccess) = return $ Right Ok
+    run (Delay n f) = f
+    {-
+    run (Fork c f) =
+    run (Wait c f) =
+    run (Subtest c f) =
+    -}
+
+message :: Int -> IO ()
+message n = forever $ do
+  threadDelay 1000000
+  outputConcurrent ("Message " ++ show n ++ "\n")
+
+withReg x = withConsoleRegion Linear $ \r -> do
+  setConsoleRegion r ("" :: String)
+  setConsoleRegion r (take 5  $ repeat '\n')
+  x r
+
+runTestConc t = runTerminal $ do
+  st@MultiState{..} <- atomically $ defState
+  (withReg $ \r -> do
+    runStateT (iterT runIO t) st
+    atomically $ closeTMQueue traceQueue
+    finishConsoleRegion r ("Test done" :: String)) `A.concurrently` (withConsoleRegion Linear $ \r -> do
+      setConsoleRegion r ("" :: String)
+      setConsoleRegion r (take 10  $ repeat '\n')
+      dumpTrace traceQueue r
+      finishConsoleRegion r ("Trace done" :: String)
+      ) `A.concurrently` (withConsoleRegion Linear $ \r -> forever $ do
+      setConsoleRegion r $ do
+        w <- consoleWidth
+        h <- consoleHeight
+        return $ T.pack $ unwords [ "size:", show w, "x", show h]
+      threadDelay 1000000
+      )
+  return ()
+  where
+    lastN :: Int -> [a] -> [a]
+    lastN n xs = foldl (const . drop 1) xs (drop n xs)
+
+    dumpTrace q r = do
+      buf <- atomically $ readTMQueue q
+      case buf of
+        Nothing -> return ()
+        Just msg -> do
+          appendConsoleRegion r (msg ++ "\n")
+          tuneDisplay r $ pure . (T.unlines .  (lastN 9)  . T.lines)
+          dumpTrace q r
+
+runTest :: Test Result -> IO Result
+runTest t = do
+  st@MultiState{..} <- atomically $ defState
+  forkIO $ forever $ do
+    buf <- atomically $ readTMQueue traceQueue
+    print buf
+
+  res <- fmap fst $ runStateT (iterT runIO t) st
+  atomically $ closeTMQueue traceQueue
+  return res
+
+runIO :: MonadIO m
+      => MultiTypeF Result (StateT MultiState m (Either Failure Success))
+      -> StateT MultiState m (Either Failure Success)
+runIO Halt = return $ Left Halted
+runIO (ReadChar Target{..} eof f) = do
+  mc <- liftIO $ getC
+  case mc of
+    Nothing -> eof
+    Just c -> f c
+runIO (WriteChar Target{..} c f) = liftIO (putC c) >> f
+runIO (Trace m f) = do
+  MultiState{..} <- get
+  liftIO $ atomically $ writeTMQueue traceQueue $ "Trace:" ++ m
+  f
+runIO (System e a f) = liftIO (mkProc e a) >>= f
+runIO (Fork c f) = liftIO ((A.async . runTest) c) >>= f
+runIO (Wait a f) = liftIO (A.wait a) >>= f
+runIO (TestFail e) = return $ Left $ Failed e
+runIO (TestSuccess) = return $ Right Ok
+runIO (Delay n f) = do
+  liftIO $ threadDelay (fromIntegral (n*1000000))
+  f
+runIO (Subtest name a f) = do
+  res <- liftIO $ runTest a
+  f res
+
+readChar :: (Monad m) => Target -> TestT m (Maybe Char)
+readChar t = liftF $ ReadChar t Nothing Just
+
+writeChar :: (Monad m) => Target -> Char -> TestT m ()
+writeChar t c = liftF $ WriteChar t c ()
+
+trace :: (Monad m) => String -> TestT m ()
+trace str = liftF $ Trace str ()
+
+system :: (Monad m) => String -> [String] -> TestT m Target
+system cmd args = liftF $ System cmd args id
+
+fork :: MonadFree (MultiTypeF a) m => Test a -> m (LA.Async a)
+fork sub = liftF $ Fork sub id
+
+wait :: MonadFree (MultiTypeF a) m => LA.Async a -> m a
+wait what =  liftF $ Wait what id
+
+delay :: (Monad m) => Integer -> TestT m ()
+delay n = liftF $ Delay n ()
+
+testSuccess :: (Monad m) => TestT m Result
+testSuccess = liftF $ TestSuccess
+
+testFail :: (Monad m) => String -> TestT m Result
+testFail errStr = liftF $ TestFail errStr
+
+subtest :: MonadFree (MultiTypeF a) m => String -> Test a -> m a
+subtest name sub = liftF $ Subtest name sub id
+
+sub name sub = trace "subtest" >> subtest name sub
+
+readLine :: (Monad m) => Target -> TestT m String
+readLine t = unfoldM $ mfilter (/= '\n') <$> (readChar t)
+
+readLine' :: (Monad m) => Target -> TestT m (Maybe String)
+readLine' t = do
+  mc <- readChar t
+  case mc of
+    Nothing -> trace "EOF in readline" >> return Nothing
+    Just '\n' -> return $ Just []
+    Just c -> do
+      l <- readLine' t
+      return $ fmap (c:) l
+
+waitLine t el = do
+  trace $ printf "[%s] waiting for line '%s'" (name t) el
+  go t el
+  where
+    go t el = do
+      l <- readLine' t
+      case l of
+        Nothing -> trace $ printf "[%s] got nothing" (name t)
+        Just l -> when (l /= el) $ go t el
+
+writeLine :: (Monad m) => Target -> String -> TestT m ()
+writeLine t x = do
+  forM_ (x ++ "\r\n") $ writeChar t
+
+--hello :: Target -> Test ()
+hello t = do
+  --name "test name"
+  system "./fake" []
+  a <- fork $ do
+    trace "in delay"
+    delay 10
+    trace "end delay"
+    testSuccess
+
+  fork $ do
+    trace "in fork"
+    --c <- readChar t
+    --trace $ show c
+    writeChar t '.'
+    trace "end fork"
+    testSuccess
+
+  subtest "lala" $ do
+    testSuccess
+  --c <- readChar
+  trace "Start"
+  waitLine t "something"
+  c <- readChar t
+  trace $ show c
+  writeChar t 'k'
+
+  wait a
+
+  waitLine t "booting"
+  writeChar t 'k'
+  waitLine t "login"
+  --halt
+  --
+
+
+mkConc = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  A.async $ A.runConcurrently $  A.Concurrently (lal sIn)
+                              *> A.Concurrently (fromHandle stdin sOut)
+  return $ stmtarget "concurrent-output" sIn sOut
+
+lal q = withReg $ \r -> forever $ do
+  mbuf <- atomically $ readTMQueue q
+  case mbuf of
+    Nothing -> finishConsoleRegion r ("Concurrent output done" :: String)
+    Just x -> appendConsoleRegion r [x]
+
+mkDummy = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  A.async $ A.runConcurrently $  A.Concurrently (toHandle stdout sIn)
+                              *> A.Concurrently (fromHandle stdin sOut)
+
+  return $ stmtarget "dummy" sIn sOut
+
+mkSerial dev = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  A.async $ bracket (hOpenSerial dev settings)
+    hClose (marshallSerial sIn sOut)
+
+  return $ stmtarget dev sIn sOut
+
+mkStdio = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+  A.async $ marshallIO sIn sOut
+
+  return $ stmtarget "stdio" sIn sOut
+
+mkZRE group = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  A.async $ runZre $ do
+    zjoin group
+    (multiToZre group sIn) `LA.concurrently` (zreToMulti group sOut)
+
+  return $ stmtarget ("zre-" ++ (C.unpack group)) sIn sOut
+
+multiToZre group sOut = do
+  forever $ do
+    mc <- liftSTM $ readTMQueue sOut
+    case mc of
+      Nothing -> return ()
+      Just c -> zshout group $ C.pack [c]
+
+zreToMulti group sIn = do
+  forever $ do
+    e <- readZ
+    case e of
+      (Shout _peer g x _time) -> do
+        liftIO $ print (C.unpack $ C.concat x)
+        liftSTM $ mapM_ (writeTMQueue sIn) (C.unpack $ C.concat x)
+      x -> do
+        liftIO $ print x
+
+liftSTM = liftIO . atomically
+
+mkProc exe args = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  (Just hin, Just hout, _, _) <-
+    createProcess (proc exe args){ -- cwd = Just "/home/rmarko"
+                                  std_in = CreatePipe
+                                , std_out = CreatePipe }
+
+  A.async $ A.runConcurrently $  A.Concurrently (toHandle hin sIn)
+                              *> A.Concurrently (fromHandle hout sOut)
+
+  return $ stmtarget (printf "proc(%s)" exe) sIn sOut
+
+toHandle h q = forever $ do
+  mbuf <- atomically $ readTMQueue q
+  case mbuf of
+    Nothing -> return ()
+    Just x -> hPutChar h x >> toHandle h q
+
+fromHandle h q = forever $ do
+  e <- hIsEOF h
+  if e
+    then atomically $ closeTMQueue q
+    else do
+      c <- hGetChar h
+      atomically $ writeTMQueue q c
+      fromHandle h q
+
+mkSSH :: String -> String -> IO Target
+mkSSH dev exe = do
+  mkProc "ssh" [dev, exe]
+
+stmtarget n qI qO = Target
+  { name = n
+  , putC = atomically . writeTMQueue qI
+  , getC = atomically $ readTMQueue qO
+  }
+
+multi t m io p zre ssh = do
+  trace "start"
+  waitLine ssh "Linux"
+  trace "sshdone"
+  p2 <- system "./fake2" []
+  waitLine p2 "something"
+  waitLine p "something"
+  waitLine p2 "login"
+  waitLine p "login"
+  waitLine io "start"
+  waitLine zre "zre"
+  waitLine t "ok"
+  waitLine io "start"
+  testSuccess
+
+--marshall qI qO = forever $ do
+--  x <- atomically $ readTMQueue qO
+--  atomically $ writeTMQueue qI x
+--
+pipe from to = forever $ do
+  c <- getC from
+  maybe (return ()) (putC to) c
+
+perfmain = do
+  io <- mkStdio
+  t <- mkSerial "/dev/ttyS0"
+  A.async $ pipe io t
+  pipe t io
+
+--main' = do
+--  t <- mkSerial "/dev/ttyS0"
+--  runTest $ hello t
+
+mainx = do
+  t <- mkSerial "/dev/ttyS0"
+  m <- mkSerial "/dev/ttyS2"
+  io <- mkStdio
+  p <- mkProc "./fake2" []
+  zre <- mkZRE "test"
+  ssh <- mkSSH "grampi-vpn" "/bin/uname"
+
+  --r <- runTest (multi t m io)
+  --print r
+  --
+  void $ runTest (multi t m io p zre ssh)
+
+settings = SerialPortSettings CS115200 8 One NoParity NoFlowControl 1
+main'' = do
+  sIn  <- atomically $ newTMQueue
+  sOut <- atomically $ newTMQueue
+
+  A.async $ bracket (hOpenSerial "/dev/ttyS0" settings)
+    hClose (marshallSerial sIn sOut)
+
+  --runConcurrently $ Concurrently (parseSerial sOut)
+
+  marshallIO sOut sIn
+
+-- $ ipmitool -H devnode1-mgmt -U ADMIN -P ADMIN chassis power cycle
+--Chassis Power Control: Cycle
+--
+--stty -F /dev/ttyUSB0 115200 
