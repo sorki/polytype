@@ -5,6 +5,7 @@ Description : Asciinema compatibility and asciicast v2 implementation
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module Polytype.Asciinema where
 
