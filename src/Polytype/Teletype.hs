@@ -8,6 +8,7 @@ Polymorphic Teletype so we can use different kinds of terminals
 -}
 
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
 module Polytype.Teletype (
     Teletype(..)
