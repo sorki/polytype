@@ -10,8 +10,17 @@ maintainer:          srk@48.io
 copyright:           2020 Richard Marko
 category:            System
 build-type:          Simple
--- extra-source-files:
 cabal-version:       >=1.10
+extra-source-files:
+  CHANGELOG.md
+  LICENSE
+  README.md
+
+flag examples
+  default:
+    False
+  description:
+    Builds example applications
 
 library
   ghc-options:
@@ -106,9 +115,11 @@ executable polytype-exe
                      , polytype
   default-language:    Haskell2010
 
-executable polytype-htop-test
+executable polytype-htop-demo
+  if !flag(examples)
+    buildable: False
   hs-source-dirs:      app
-  main-is:             TestHtop.hs
+  main-is:             HtopDemo.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , bytestring
@@ -123,9 +134,11 @@ test-suite polytype-tests
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
-  other-modules:       SanitySpec
-                       SpecHelper
-                       PtySpec SerialSpec StdStreamsSpec TeletypeSpec
+  other-modules:       SpecHelper
+                       PtySpec
+                       SerialSpec
+                       StdStreamsSpec
+                       TeletypeSpec
   build-depends:       base >= 4.7 && < 5
                      , attoparsec
                      , bytestring
@@ -140,21 +153,8 @@ test-suite polytype-tests
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-extensions:
     DataKinds
---    FlexibleContexts
---    GADTs
---    LambdaCase
---    BlockArguments
---    PolyKinds
---    RecordWildCards
---    RankNTypes
---    ScopedTypeVariables
     TypeApplications
     TypeOperators
---    TypeFamilies
---    TemplateHaskell
---    NumericUnderscores
---    QuantifiedConstraints
---    FlexibleInstances
 
 source-repository head
   type:     git
