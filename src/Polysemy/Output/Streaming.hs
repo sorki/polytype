@@ -8,17 +8,12 @@ module Polysemy.Output.Streaming
   , runOutputStreamStdout
   ) where
 
---import           Data.Functor.Of
---import           Data.Void
 import           Polysemy
 import           Polysemy.Output
 
 import           Streaming.Prelude (Stream, Of)
 import qualified Streaming.Prelude
 
--- runM . runOutputSem (\s -> Streaming.Prelude.stdoutLn (Streaming.Prelude.yield s))  . runInputViaStream Streaming.Prelude.stdinLn  . runTeletypeInputOutput @String $ readTTY @String
---
---runOutputStream :: Member (Embed IO) r => InterpreterFor (Output String) r
 runOutputStream :: forall stringy m r a . Monad m
                 => (Stream (Of stringy) m () -> Sem r ())
                 -> Sem (Output stringy ': r) a

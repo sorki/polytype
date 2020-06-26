@@ -1,4 +1,5 @@
 -- borrowed from polysemy-zoo
+-- until https://github.com/polysemy-research/polysemy-zoo/issues/65
 --
 module Polysemy.Input.Streaming
   ( -- * Underlying Effect
