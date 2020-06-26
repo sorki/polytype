@@ -5,6 +5,9 @@ module SanitySpec where
 
 import SpecHelper
 
+spec :: Spec
+spec = return ()
+
 {--
 spec :: Spec
 spec = do

@@ -2,6 +2,8 @@ module TeletypeSpec where
 
 import SpecHelper
 
+spec :: Spec
+spec = return ()
 
 -- run
 -- . runTeletypePure ["te", ""]
