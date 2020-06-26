@@ -10,4 +10,3 @@ main = execParser opts >>= htopAsciinemaExample
     opts = info (argument str (metavar "FILE") <**> helper)
       ( fullDesc
        <> progDesc "Record htop demo using asciicast output")
-
