@@ -33,6 +33,7 @@ module Polytype (
   , module Polysemy.Input
   , module Polysemy.Input.Streaming
   , module Polysemy.Output
+  , module Polysemy.State
   , module Polysemy.Tagged
   , module Polysemy.Trace
 
@@ -49,6 +50,7 @@ import Polysemy.Input
 import Polysemy.Input.Streaming
 import Polysemy.Output
 import Polysemy.Resource
+import Polysemy.State
 import Polysemy.Tagged
 import Polysemy.Trace
 

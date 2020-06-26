@@ -127,9 +127,12 @@ test-suite polytype-tests
                        SpecHelper
                        PtySpec SerialSpec StdStreamsSpec TeletypeSpec
   build-depends:       base >= 4.7 && < 5
+                     , attoparsec
                      , bytestring
                      , data-default
                      , text
+                     , polysemy
+                     , polysemy-plugin
                      , polytype
                      , hspec
                      , hspec-discover
