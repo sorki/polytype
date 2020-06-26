@@ -89,9 +89,9 @@ display msg = do
   writeSlowly msg
   writeTTY "\ESC~"
 
---writeSlowly :: Members '[Teletype String, Delay Seconds, Delay MilliSeconds] r
---            => String
---            -> Sem r ()
+writeSlowly :: Members '[Teletype String, Delay Seconds, Delay MilliSeconds] r
+            => String
+            -> Sem r ()
 writeSlowly [] = delay @Seconds 1
 writeSlowly (x:xs) = do
   writeTTY [x]
