@@ -1,14 +1,16 @@
 {-|
 Description : Functionality for stripping ANSI escape sequences from Teletypes
+
+From https://hackage.haskell.org/package/strip-ansi-escape
+* adjusted for streaming so it doesn't expect @endOfInput@
+* fixed few unhandled sequences
+
+XXX: submit PR
+
 -}
 
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
-
--- from https://hackage.haskell.org/package/strip-ansi-escape
--- * adjusted for streaming so it doesn't expect @endOfInput@
--- * fixed few unhandled sequences
--- XXX: submit PR
 
 module Polytype.Ansi
   ( teletypeStripAnsi
