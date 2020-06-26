@@ -5,3 +5,4 @@ result*
 .stack-work
 .ghc.environment*
 cabal.project.local
+*.cast
