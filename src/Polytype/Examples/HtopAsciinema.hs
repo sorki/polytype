@@ -34,11 +34,16 @@ htopAsciinemaExample outputFile =
 
       void $ async $ forever $ readTTY >> pure ()
 
-      --void $ async $ forever $ do
-      --  writeTTY "h"
-      --  delay @Seconds 5
-      a <- async $ do
+      void $ async $ do
         --writeTTY "\ESC[13~"
+        display "Welcome to htop demo!"
+        display "Recorded with polytype"
+        display "Press h or F1 for help"
+        writeTTY "h"
+        delay @Seconds 5
+        writeTTY "h"
+        delay @Seconds 2
+
         display "Search feature - F3"
         writeTTY "\ESC[13~"
         writeLineSlowly "htop"
@@ -48,9 +53,13 @@ htopAsciinemaExample outputFile =
         writeTTY "\ESC[14~"
         writeLineSlowly "polytype"
         delay @Seconds 5
+
+        display ""
+
         writeTTY "\ESC[14~"
         writeLineSlowly "htop"
         delay @Seconds 5
+
         display "Sorted - F5"
         writeTTY "\ESC[15~"
         delay @Seconds 5
@@ -59,26 +68,37 @@ htopAsciinemaExample outputFile =
         writeTTY "p"
         delay @Seconds 5
 
-        --forever $ do
-        --  writeTTY "h"
-        --  delay @Seconds 5
+        display "That's all for now!"
+        display "Lets toggle program path for a bit"
+        forever $ do
+          writeTTY "p"
+          delay @Seconds 5
 
-      --delay @Minutes 1
-      await a
+      delay @Minutes 2
+      display "Thanks for watching"
       writeTTY "q"
       readTTY
 
---display :: String -> Sem (Teletype @String ': r) a
+display :: Members '[Teletype String, Delay Seconds, Delay MilliSeconds] r
+        => String
+        -> Sem r ()
 display msg = do
+  writeTTY "\ESC[14~"
+  writeTTY "\ESC~"
   writeTTY "\ESC[14~"
   writeSlowly msg
   writeTTY "\ESC~"
 
-
+--writeSlowly :: Members '[Teletype String, Delay Seconds, Delay MilliSeconds] r
+--            => String
+--            -> Sem r ()
 writeSlowly [] = delay @Seconds 1
 writeSlowly (x:xs) = do
   writeTTY [x]
   delay @MilliSeconds 100
   writeSlowly xs
 
+--writeLineSlowly :: Members '[Teletype String, Delay Seconds, Delay MilliSeconds] r
+--                => String
+--                -> Sem r ()
 writeLineSlowly msg = writeSlowly msg >> writeLine ""

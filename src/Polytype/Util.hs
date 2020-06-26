@@ -31,6 +31,10 @@ repeats_ n a = Control.Monad.forM_ [0..n] (pure a)
 readMany :: Int -> Sem (Teletype stringy ': r) [stringy]
 readMany x = mapM (pure readTTY) [0..x]
 
+-- | Write multiple messages to `Teletype`.
+writeMany :: Member (Teletype stringy) r => [stringy] -> Sem r ()
+writeMany xs = mapM_ writeTTY xs
+
 -- | Retry an action until it succeeds.
 retry :: Monad m => m (Maybe b) -> m b
 retry a = do
