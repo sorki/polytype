@@ -67,7 +67,7 @@ main =
 
 ### Asciinema output
 
-* Watch the htop demo [recording](https://asciinema.org/a/343380)
+[![asciicast](https://asciinema.org/a/343380.svg)](https://asciinema.org/a/343380)
 
 ## Development status
 
