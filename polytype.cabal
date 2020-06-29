@@ -18,7 +18,7 @@ extra-source-files:
 
 flag examples
   default:
-    False
+    True
   description:
     Builds example applications
 
